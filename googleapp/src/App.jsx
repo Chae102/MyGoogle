@@ -1,124 +1,127 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { fetchLatestNews } from "./services/news";
+import { fetchCurrentWeather, getCurrentPosition } from "./services/weather";
 
-const card = {
-  background:"#fff", borderRadius:8, padding:"18px 20px",
-  boxShadow:"0 1px 6px rgba(32,33,36,.12)", border:"1px solid #dadce0",
-  display:"flex", flexDirection:"column",
-};
-const cardTitle = {
-  fontSize:11, fontWeight:600, color:"#5f6368", letterSpacing:.8,
-  textTransform:"uppercase", marginBottom:14, display:"flex", alignItems:"center", gap:6
-};
+const getCardStyle = (theme) => ({
+  background: theme.surface,
+  borderRadius: 14,
+  padding: "20px 22px",
+  boxShadow: theme.mode === "dark"
+    ? "0 4px 14px rgba(0,0,0,.28)"
+    : "0 4px 14px rgba(32,33,36,.10)",
+  border: `1px solid ${theme.border}`,
+  display: "flex",
+  flexDirection: "column",
+  minHeight: 270,
+  transition: "transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease",
+});
+
+const getCardTitleStyle = (theme) => ({
+  fontSize: 13,
+  fontWeight: 700,
+  color: theme.text,
+  letterSpacing: 0,
+  textTransform: "uppercase",
+  marginBottom: 16,
+  display: "flex",
+  alignItems: "center",
+  gap: 8,
+});
 
 /* ── CLOCK ── */
-function ClockCard() {
+function ClockCard({ theme }) {
   const [time, setTime] = useState(new Date());
   useEffect(() => { const t = setInterval(() => setTime(new Date()), 1000); return () => clearInterval(t); }, []);
   const pad = n => String(n).padStart(2,"0");
   const days = ["일요일","월요일","화요일","수요일","목요일","금요일","토요일"];
   const months = ["1월","2월","3월","4월","5월","6월","7월","8월","9월","10월","11월","12월"];
   return (
-    <div style={card}>
-      <div style={cardTitle}><span>🕐</span> 현재 시간</div>
-      <div style={{flex:1, display:"flex", flexDirection:"column", justifyContent:"center", alignItems:"center", padding:"8px 0"}}>
-        <div style={{fontSize:48, fontWeight:300, color:"#202124", letterSpacing:-1, lineHeight:1}}>
+    <div className="dashboard-card" style={getCardStyle(theme)}>
+      <div style={getCardTitleStyle(theme)}><span style={{fontSize:16}}>🕐</span> 현재 시간</div>
+      <div style={{flex:1, display:"flex", flexDirection:"column", justifyContent:"center", alignItems:"center", padding:"12px 0"}}>
+        <div style={{fontSize:48, fontWeight:300, color:theme.text, letterSpacing:0, lineHeight:1}}>
           {pad(time.getHours())}:{pad(time.getMinutes())}
-          <span style={{fontSize:24, color:"#9aa0a6"}}>:{pad(time.getSeconds())}</span>
+          <span style={{fontSize:24, color:theme.muted}}>:{pad(time.getSeconds())}</span>
         </div>
         <div style={{marginTop:10, display:"flex", gap:8, alignItems:"center"}}>
-          <span style={{background:"#4285F4", color:"#fff", borderRadius:4, padding:"3px 10px", fontSize:12, fontWeight:500}}>{days[time.getDay()]}</span>
-          <span style={{fontSize:14, color:"#5f6368"}}>{time.getFullYear()}년 {months[time.getMonth()]} {time.getDate()}일</span>
+          <span style={{background:theme.accentColor, color:"#fff", borderRadius:999, padding:"4px 11px", fontSize:12, fontWeight:700}}>{days[time.getDay()]}</span>
+          <span style={{fontSize:14, color:theme.subText}}>{time.getFullYear()}년 {months[time.getMonth()]} {time.getDate()}일</span>
         </div>
       </div>
     </div>
   );
 }
 
-/* ── WEATHER ── */
-const WX_CODE = {
-  0:"☀️ 맑음",1:"🌤 대체로 맑음",2:"⛅ 구름 조금",3:"☁️ 흐림",
-  45:"🌫 안개",48:"🌫 안개",51:"🌦 이슬비",53:"🌦 이슬비",55:"🌦 이슬비",
-  61:"🌧 비",63:"🌧 비",65:"🌧 폭우",71:"❄️ 눈",73:"❄️ 눈",75:"❄️ 폭설",
-  80:"🌦 소나기",81:"🌦 소나기",82:"⛈ 폭우",95:"⛈ 천둥번개"
-};
-const WX_EMOJI = {
-  0:"☀️",1:"🌤",2:"⛅",3:"☁️",45:"🌫",48:"🌫",51:"🌦",53:"🌦",55:"🌦",
-  61:"🌧",63:"🌧",65:"🌧",71:"❄️",73:"❄️",75:"❄️",80:"🌦",81:"🌦",82:"⛈",95:"⛈"
-};
-
-function WeatherCard() {
+function WeatherCard({ theme }) {
   const [weather, setWeather] = useState(null);
   const [hourly, setHourly] = useState([]);
   const [err, setErr] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!navigator.geolocation) { setErr("위치 접근 불가"); setLoading(false); return; }
-    navigator.geolocation.getCurrentPosition(async pos => {
+    let ignore = false;
+
+    async function loadWeather() {
+      setLoading(true);
+      setErr(null);
+
       try {
-        const { latitude: lat, longitude: lon } = pos.coords;
-        const res = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-          `&current=temperature_2m,weathercode,windspeed_10m,relative_humidity_2m,apparent_temperature` +
-          `&hourly=temperature_2m,weathercode&timezone=auto&forecast_days=1`
-        );
-        const d = await res.json();
-        const c = d.current;
-        setWeather({
-          temp: Math.round(c.temperature_2m),
-          feels: Math.round(c.apparent_temperature),
-          desc: WX_CODE[c.weathercode] || "🌡 날씨",
-          emoji: WX_EMOJI[c.weathercode] || "🌡",
-          wind: Math.round(c.windspeed_10m),
-          humidity: c.relative_humidity_2m,
-        });
-        // Build hourly: next 6 slots from current hour
-        const now = new Date();
-        const curH = now.getHours();
-        const slots = [];
-        for (let i = 0; i < d.hourly.time.length && slots.length < 6; i++) {
-          const h = new Date(d.hourly.time[i]).getHours();
-          if (new Date(d.hourly.time[i]) >= now || h === curH) {
-            slots.push({ hour: h, temp: Math.round(d.hourly.temperature_2m[i]), emoji: WX_EMOJI[d.hourly.weathercode[i]] || "🌡" });
-          }
+        const position = await getCurrentPosition();
+        const forecast = await fetchCurrentWeather(position.coords);
+
+        if (!ignore) {
+          setWeather(forecast.current);
+          setHourly(forecast.hourly);
         }
-        setHourly(slots);
-      } catch { setErr("날씨 로드 실패"); }
-      setLoading(false);
-    }, () => { setErr("위치 권한이 필요합니다"); setLoading(false); });
+      } catch (error) {
+        if (!ignore) {
+          setErr(error.message || "날씨를 불러오지 못했습니다.");
+        }
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
+      }
+    }
+
+    loadWeather();
+
+    return () => {
+      ignore = true;
+    };
   }, []);
 
   return (
-    <div style={card}>
-      <div style={cardTitle}><span>🌤</span> 오늘의 날씨</div>
-      {loading && <div style={{color:"#9aa0a6", fontSize:13, flex:1, display:"flex", alignItems:"center", justifyContent:"center"}}>위치 확인 중...</div>}
-      {err && <div style={{color:"#d93025", fontSize:13}}>{err}</div>}
+    <div className="dashboard-card" style={getCardStyle(theme)}>
+      <div style={getCardTitleStyle(theme)}><span style={{fontSize:16}}>🌤</span> 오늘의 날씨</div>
+      {loading && <div style={{color:theme.muted, fontSize:13, flex:1, display:"flex", alignItems:"center", justifyContent:"center"}}>위치 확인 중...</div>}
+      {err && <div style={{color:theme.danger, fontSize:13}}>{err}</div>}
       {weather && (
         <div style={{flex:1, display:"flex", flexDirection:"column", gap:14}}>
           {/* Current */}
-          <div style={{display:"flex", alignItems:"flex-end", gap:12}}>
-            <div style={{fontSize:52, lineHeight:1}}>{weather.emoji}</div>
+          <div style={{display:"flex", alignItems:"center", gap:14}}>
+            <div style={{fontSize:52, lineHeight:1}}>{weather.icon}</div>
             <div>
-              <div style={{fontSize:40, fontWeight:300, color:"#202124", lineHeight:1}}>{weather.temp}°</div>
-              <div style={{fontSize:12, color:"#5f6368", marginTop:2}}>{weather.desc.replace(/^.+?\s/,"")}</div>
+              <div style={{fontSize:40, fontWeight:300, color:theme.text, lineHeight:1}}>{weather.temp}°</div>
+              <div style={{fontSize:12, color:theme.subText, marginTop:2}}>{weather.desc}</div>
             </div>
-            <div style={{marginLeft:"auto", display:"flex", flexDirection:"column", gap:4, alignItems:"flex-end"}}>
+            <div style={{marginLeft:"auto", display:"flex", flexWrap:"wrap", gap:6, justifyContent:"flex-end"}}>
               {[["💨", `${weather.wind}km/h`],["💧", `${weather.humidity}%`],["🌡", `체감 ${weather.feels}°`]].map(([ico,val])=>(
-                <div key={val} style={{fontSize:12, color:"#5f6368"}}>{ico} {val}</div>
+                <div key={val} style={{fontSize:11, color:theme.subText, background:theme.surfaceAlt, border:`1px solid ${theme.divider}`, borderRadius:999, padding:"4px 8px", whiteSpace:"nowrap"}}>{ico} {val}</div>
               ))}
             </div>
           </div>
           {/* Divider */}
-          <div style={{height:1, background:"#e8eaed"}}/>
+          <div style={{height:1, background:theme.divider}}/>
           {/* Hourly forecast */}
           <div>
-            <div style={{fontSize:10, color:"#9aa0a6", fontWeight:600, letterSpacing:.5, marginBottom:8}}>시간별 예보</div>
+            <div style={{fontSize:10, color:theme.muted, fontWeight:600, letterSpacing:.5, marginBottom:8}}>시간별 예보</div>
             <div style={{display:"flex", gap:4, justifyContent:"space-between"}}>
               {hourly.map((h, i) => (
-                <div key={i} style={{flex:1, textAlign:"center", background: i===0?"#e8f0fe":"#f8f9fa", borderRadius:8, padding:"6px 2px"}}>
-                  <div style={{fontSize:10, color: i===0?"#1a73e8":"#9aa0a6", fontWeight:600}}>{i===0?"지금":`${h.hour}시`}</div>
-                  <div style={{fontSize:16, margin:"4px 0"}}>{h.emoji}</div>
-                  <div style={{fontSize:12, fontWeight:500, color: i===0?"#1a73e8":"#3c4043"}}>{h.temp}°</div>
+                <div key={i} style={{flex:1, textAlign:"center", background: i===0 ? `${theme.accentColor}22` : theme.surfaceAlt, borderRadius:10, padding:"8px 4px", border:`1px solid ${i===0 ? `${theme.accentColor}44` : "transparent"}`}}>
+                  <div style={{fontSize:10, color: i===0?theme.accentColor:theme.muted, fontWeight:600}}>{i===0?"지금":`${h.hour}시`}</div>
+                  <div style={{fontSize:16, margin:"4px 0"}}>{h.icon}</div>
+                  <div style={{fontSize:12, fontWeight:500, color: i===0?theme.accentColor:theme.text}}>{h.temp}°</div>
                 </div>
               ))}
             </div>
@@ -130,8 +133,8 @@ function WeatherCard() {
 }
 
 /* ── TODO ── */
-function TodoCard() {
-  const [todos, setTodos] = useState([{id:1, text:"오늘의 할 일을 추가해 보세요!", done:false}]);
+function TodoCard({ theme }) {
+  const [todos, setTodos] = useState([]);
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
   const add = () => { const t=input.trim(); if(!t) return; setTodos(p=>[...p,{id:Date.now(),text:t,done:false}]); setInput(""); };
@@ -140,28 +143,28 @@ function TodoCard() {
   const done = todos.filter(t=>t.done).length;
   const allDone = todos.length > 0 && done === todos.length;
   return (
-    <div style={card}>
-      <div style={{...cardTitle, justifyContent:"space-between"}}>
-        <span style={{display:"flex", alignItems:"center", gap:6}}><span>✅</span> 오늘의 할 일</span>
-        <span style={{fontSize:11, color: allDone?"#34A853":"#9aa0a6", fontWeight:600}}>{allDone?"🎉 완료!": `${done}/${todos.length}`}</span>
+    <div className="dashboard-card" style={getCardStyle(theme)}>
+      <div style={{...getCardTitleStyle(theme), justifyContent:"space-between"}}>
+        <span style={{display:"flex", alignItems:"center", gap:8}}><span style={{fontSize:16}}>✅</span> 오늘의 할 일</span>
+        <span style={{fontSize:11, color: allDone?theme.success:theme.muted, fontWeight:600}}>{allDone?"🎉 완료!": `${done}/${todos.length}`}</span>
       </div>
-      <div style={{height:3, background:"#e8eaed", borderRadius:2, marginBottom:12}}>
-        <div style={{height:"100%", borderRadius:2, background:allDone?"#34A853":"#4285F4", width:`${todos.length?(done/todos.length)*100:0}%`, transition:"width 0.3s"}}/>
+      <div style={{height:4, background:theme.divider, borderRadius:999, marginBottom:14}}>
+        <div style={{height:"100%", borderRadius:2, background:allDone?theme.success:theme.accentColor, width:`${todos.length?(done/todos.length)*100:0}%`, transition:"width 0.3s"}}/>
       </div>
-      <div style={{flex:1, overflowY:"auto", maxHeight:180, marginBottom:12}}>
-        {todos.length===0 && <div style={{textAlign:"center", color:"#9aa0a6", fontSize:13, padding:"20px 0"}}>할 일을 추가해 보세요 🎯</div>}
+      <div style={{flex:1, overflowY:"auto", maxHeight:190, marginBottom:14, display:"flex", flexDirection:"column", justifyContent:todos.length===0?"center":"flex-start"}}>
+        {todos.length===0 && <div style={{textAlign:"center", color:theme.muted, fontSize:13, padding:"22px 0"}}>할 일을 추가해 보세요 🎯</div>}
         {todos.map((todo,i) => (
-          <div key={todo.id} style={{display:"flex", alignItems:"center", gap:10, padding:"7px 4px", borderBottom:i<todos.length-1?"1px solid #f1f3f4":"none"}}
-            onMouseEnter={e=>e.currentTarget.style.background="#f8f9fa"}
+          <div key={todo.id} style={{display:"flex", alignItems:"center", gap:10, padding:"9px 6px", borderRadius:8, borderBottom:i<todos.length-1?`1px solid ${theme.divider}`:"none"}}
+            onMouseEnter={e=>e.currentTarget.style.background=theme.surfaceAlt}
             onMouseLeave={e=>e.currentTarget.style.background="transparent"}
           >
-            <div onClick={()=>toggle(todo.id)} style={{width:18, height:18, borderRadius:3, flexShrink:0, cursor:"pointer", border:todo.done?"none":"2px solid #dadce0", background:todo.done?"#34A853":"transparent", display:"flex", alignItems:"center", justifyContent:"center"}}>
+            <div onClick={()=>toggle(todo.id)} style={{width:18, height:18, borderRadius:3, flexShrink:0, cursor:"pointer", border:todo.done?"none":`2px solid ${theme.border}`, background:todo.done?theme.success:"transparent", display:"flex", alignItems:"center", justifyContent:"center"}}>
               {todo.done && <svg width="11" height="11" viewBox="0 0 12 12" fill="none"><path d="M2 6l3 3 5-5" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/></svg>}
             </div>
-            <span style={{flex:1, fontSize:13, color:todo.done?"#9aa0a6":"#202124", textDecoration:todo.done?"line-through":"none", cursor:"pointer"}} onClick={()=>toggle(todo.id)}>{todo.text}</span>
-            <svg onClick={()=>remove(todo.id)} width="15" height="15" viewBox="0 0 24 24" fill="#dadce0" style={{cursor:"pointer", flexShrink:0}}
+            <span style={{flex:1, fontSize:13, color:todo.done?theme.muted:theme.text, textDecoration:todo.done?"line-through":"none", cursor:"pointer"}} onClick={()=>toggle(todo.id)}>{todo.text}</span>
+            <svg onClick={()=>remove(todo.id)} width="15" height="15" viewBox="0 0 24 24" fill={theme.border} style={{cursor:"pointer", flexShrink:0}}
               onMouseEnter={e=>e.target.setAttribute("fill","#ea4335")}
-              onMouseLeave={e=>e.target.setAttribute("fill","#dadce0")}
+              onMouseLeave={e=>e.target.setAttribute("fill",theme.border)}
             ><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
           </div>
         ))}
@@ -169,10 +172,11 @@ function TodoCard() {
       <div style={{display:"flex", gap:8}}>
         <input value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>e.key==="Enter"&&add()}
           onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} placeholder="새 할 일 추가..."
-          style={{flex:1, padding:"8px 12px", borderRadius:4, fontSize:13, fontFamily:"inherit", border:focused?"1px solid #4285F4":"1px solid #dadce0", outline:"none", color:"#202124"}}
+          className="dashboard-input"
+          style={{flex:1, minHeight:40, padding:"0 13px", borderRadius:10, fontSize:13, fontFamily:"inherit", border:focused?`1px solid ${theme.accentColor}`:`1px solid ${theme.border}`, outline:"none", color:theme.text, background:theme.surfaceAlt}}
         />
-        <button onClick={add} style={{padding:"8px 14px", borderRadius:4, border:"none", background:"#4285F4", color:"#fff", fontSize:13, fontWeight:500, cursor:"pointer", fontFamily:"inherit"}}
-          onMouseEnter={e=>e.target.style.background="#1a73e8"} onMouseLeave={e=>e.target.style.background="#4285F4"}
+        <button onClick={add} style={{minHeight:40, padding:"0 16px", borderRadius:10, border:"none", background:theme.accentColor, color:"#fff", fontSize:13, fontWeight:700, cursor:"pointer", fontFamily:"inherit"}}
+          onMouseEnter={e=>e.target.style.opacity="0.88"} onMouseLeave={e=>e.target.style.opacity="1"}
         >추가</button>
       </div>
     </div>
@@ -181,64 +185,76 @@ function TodoCard() {
 
 /* ── NEWS ── */
 const CATEGORIES = [
-  { id:"all",   label:"전체",   query:"최신 IT 기술 뉴스" },
-  { id:"ai",    label:"🤖 AI",  query:"인공지능 AI 최신 뉴스" },
-  { id:"sec",   label:"🔒 보안", query:"사이버 보안 해킹 최신 뉴스" },
-  { id:"mobile",label:"📱 모바일",query:"스마트폰 모바일 앱 최신 뉴스" },
-  { id:"startup",label:"🚀 스타트업",query:"스타트업 테크 투자 최신 뉴스" },
-  { id:"ev",    label:"🚗 EV·로봇",query:"전기차 로봇 자율주행 최신 뉴스" },
+  { id:"all", label:"전체", query:"기술 OR 소프트웨어 OR 반도체" },
+  { id:"ai", label:" AI", query:"인공지능 OR 생성형 AI OR 오픈AI" },
+  { id:"sec", label:" 보안", query:"사이버보안 OR 해킹 OR 랜섬웨어" },
+  { id:"mobile", label:" 모바일", query:"스마트폰 OR 모바일 앱 OR 안드로이드 OR 아이폰" },
+  { id:"startup", label:" 스타트업", query:"스타트업 OR 벤처투자 OR 기술 창업" },
+  { id:"ev", label:" EV·로봇", query:"전기차 OR 로봇 OR 자율주행" },
 ];
 
-function NewsCard() {
+function NewsCard({ theme }) {
   const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(false);
   const [cat, setCat] = useState("all");
+  const [err, setErr] = useState(null);
 
-  const fetchNews = useCallback(async (categoryId) => {
+  const fetchNews = useCallback(async (categoryId, signal) => {
     setLoading(true);
+    setErr(null);
     setNews([]);
-    const q = CATEGORIES.find(c=>c.id===categoryId)?.query || "최신 IT 기술 뉴스";
+    const q = CATEGORIES.find(c=>c.id===categoryId)?.query || CATEGORIES[0].query;
+
     try {
-      const res = await fetch("https://api.anthropic.com/v1/messages", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          model:"claude-sonnet-4-20250514", max_tokens:1200,
-          tools:[{type:"web_search_20250305", name:"web_search"}],
-          messages:[{role:"user", content:`"${q}" 키워드로 오늘 기준 최신 뉴스 5개를 검색해서 아래 JSON 형식으로만 답해줘. 마크다운 없이 순수 JSON 배열만 출력해.\n[{"title":"뉴스 제목","summary":"한두 줄 요약","source":"출처","url":"링크 URL"}]`}]
-        })
-      });
-      const data = await res.json();
-      const text = data.content.map(b=>b.type==="text"?b.text:"").join("");
-      setNews(JSON.parse(text.replace(/```json|```/g,"").trim()));
-    } catch {
-      setNews([{title:"뉴스를 불러오지 못했습니다", summary:"잠시 후 다시 시도해 주세요.", source:"", url:""}]);
+      const items = await fetchLatestNews(q, { signal });
+      setNews(items);
+      if (items.length === 0) {
+        setErr("최근 48시간 내 관련 뉴스를 찾지 못했습니다.");
+      }
+    } catch (error) {
+      if (error.name !== "AbortError") {
+        setErr(error.message || "뉴스를 불러오지 못했습니다.");
+      }
+    } finally {
+      if (!signal?.aborted) {
+        setLoading(false);
+      }
     }
-    setLoading(false);
   }, []);
 
-  useEffect(() => { fetchNews("all"); }, []);
+  useEffect(() => {
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      fetchNews("all", controller.signal);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      controller.abort();
+    };
+  }, [fetchNews]);
 
   const handleCat = (id) => { setCat(id); fetchNews(id); };
-  const colors = ["#4285F4","#EA4335","#FBBC05","#34A853","#4285F4"];
+  const colors = [theme.accentColor,"#EA4335","#FBBC05",theme.success,theme.accentColor];
 
   return (
-    <div style={card}>
+    <div className="dashboard-card" style={getCardStyle(theme)}>
       {/* Header */}
-      <div style={{...cardTitle, justifyContent:"space-between"}}>
-        <span style={{display:"flex", alignItems:"center", gap:6}}><span>📰</span> 최신 기술 뉴스</span>
-        <button onClick={()=>fetchNews(cat)} disabled={loading} style={{fontSize:11, padding:"3px 10px", borderRadius:4, border:"1px solid #dadce0", background:"#fff", cursor:"pointer", color:"#1a73e8", fontWeight:600, fontFamily:"inherit"}}>
-          {loading?"로딩 중...":"새로고침"}
+      <div style={{...getCardTitleStyle(theme), justifyContent:"space-between"}}>
+        <span style={{display:"flex", alignItems:"center", gap:8}}><span style={{fontSize:16}}>📰</span> 최신 기술 뉴스</span>
+        <button onClick={()=>fetchNews(cat)} disabled={loading} style={{fontSize:11, padding:"5px 11px", borderRadius:999, border:`1px solid ${theme.border}`, background:theme.surfaceAlt, cursor:"pointer", color:theme.accentColor, fontWeight:700, fontFamily:"inherit"}}>
+          {loading?"로딩 중...":"↻ 새로고침"}
         </button>
       </div>
 
       {/* Category filter */}
-      <div style={{display:"flex", gap:6, flexWrap:"wrap", marginBottom:12}}>
+      <div style={{display:"flex", gap:8, flexWrap:"wrap", marginBottom:14}}>
         {CATEGORIES.map(c => (
           <button key={c.id} onClick={()=>handleCat(c.id)} style={{
-            padding:"4px 10px", borderRadius:16, fontSize:11, fontWeight:600,
-            border: cat===c.id ? "none" : "1px solid #dadce0",
-            background: cat===c.id ? "#1a73e8" : "#fff",
-            color: cat===c.id ? "#fff" : "#5f6368",
+            padding:"6px 12px", borderRadius:999, fontSize:11, fontWeight:700,
+            border: cat===c.id ? "none" : `1px solid ${theme.border}`,
+            background: cat===c.id ? theme.accentColor : theme.surface,
+            color: cat===c.id ? "#fff" : theme.subText,
             cursor:"pointer", fontFamily:"inherit", transition:"all 0.15s"
           }}>{c.label}</button>
         ))}
@@ -246,9 +262,9 @@ function NewsCard() {
 
       {/* News list */}
       {loading && (
-        <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10, padding:"20px 0", color:"#9aa0a6"}}>
+        <div style={{flex:1, display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", gap:10, padding:"20px 0", color:theme.muted}}>
           <div style={{display:"flex", gap:6}}>
-            {["#4285F4","#EA4335","#FBBC05","#34A853"].map((c,i)=>(
+            {[theme.accentColor,"#EA4335","#FBBC05",theme.success].map((c,i)=>(
               <div key={i} style={{width:8, height:8, borderRadius:"50%", background:c, animation:`bounce 1s ${i*0.15}s infinite`}}/>
             ))}
           </div>
@@ -258,17 +274,18 @@ function NewsCard() {
       )}
       {!loading && (
         <div style={{flex:1, overflowY:"auto"}}>
+          {err && <div style={{color:theme.danger, fontSize:13, padding:"12px 4px"}}>{err}</div>}
           {news.map((item,i) => (
             <a key={i} href={item.url||"#"} target="_blank" rel="noopener noreferrer" style={{textDecoration:"none", display:"block"}}>
-              <div style={{display:"flex", gap:10, padding:"9px 4px", borderBottom:i<news.length-1?"1px solid #e8eaed":"none"}}
-                onMouseEnter={e=>e.currentTarget.style.background="#f8f9fa"}
+              <div style={{display:"flex", gap:12, padding:"11px 6px", borderRadius:10, borderBottom:i<news.length-1?`1px solid ${theme.divider}`:"none"}}
+                onMouseEnter={e=>e.currentTarget.style.background=theme.surfaceAlt}
                 onMouseLeave={e=>e.currentTarget.style.background="transparent"}
               >
-                <div style={{width:3, borderRadius:2, background:colors[i%5], flexShrink:0, alignSelf:"stretch", minHeight:36}}/>
+                <div style={{width:4, borderRadius:999, background:colors[i%5], opacity:0.88, flexShrink:0, alignSelf:"stretch", minHeight:40}}/>
                 <div style={{flex:1}}>
-                  <div style={{fontSize:13, fontWeight:500, color:"#1a0dab", marginBottom:2, lineHeight:1.4}}>{item.title}</div>
-                  <div style={{fontSize:11, color:"#4d5156", lineHeight:1.5}}>{item.summary}</div>
-                  {item.source && <div style={{fontSize:10, color:"#9aa0a6", marginTop:2}}>{item.source}</div>}
+                  <div style={{fontSize:13, fontWeight:700, color:theme.accentColor, marginBottom:3, lineHeight:1.5}}>{item.title}</div>
+                  <div style={{fontSize:11, color:theme.subText, lineHeight:1.55}}>{item.summary}</div>
+                  {item.source && <div style={{fontSize:10, color:theme.muted, marginTop:2}}>{item.source}</div>}
                 </div>
               </div>
             </a>
@@ -280,7 +297,7 @@ function NewsCard() {
 }
 
 /* ── SEARCH BAR ── */
-function SearchBar() {
+function SearchBar({ theme }) {
   const [q, setQ] = useState("");
   const [focused, setFocused] = useState(false);
   const search = e => {
@@ -289,14 +306,15 @@ function SearchBar() {
   };
   return (
     <div style={{width:"100%", maxWidth:584, margin:"0 auto"}}>
-      <div style={{display:"flex", alignItems:"center", border:focused?"1px solid transparent":"1px solid #dfe1e5", borderRadius:24, padding:"10px 16px", boxShadow:focused?"0 1px 6px rgba(32,33,36,.28)":"none", background:"#fff", gap:10}}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" stroke="#9aa0a6" strokeWidth="2" strokeLinecap="round"/></svg>
+      <div style={{display:"flex", alignItems:"center", border:focused?`1px solid ${theme.accentColor}`:`1px solid ${theme.border}`, borderRadius:999, padding:"11px 17px", boxShadow:focused?`0 4px 18px ${theme.accentColor}33`:"0 2px 10px rgba(32,33,36,.08)", background:theme.surface, gap:10}}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none"><path d="M21 21l-4.35-4.35M17 11A6 6 0 1 1 5 11a6 6 0 0 1 12 0z" stroke={theme.muted} strokeWidth="2" strokeLinecap="round"/></svg>
         <input value={q} onChange={e=>setQ(e.target.value)} onKeyDown={e=>e.key==="Enter"&&search("google")}
           onFocus={()=>setFocused(true)} onBlur={()=>setFocused(false)} placeholder="Google 검색 또는 URL 입력"
-          style={{flex:1, border:"none", outline:"none", fontSize:16, color:"#202124", background:"transparent"}}
+          className="dashboard-input"
+          style={{flex:1, border:"none", outline:"none", fontSize:16, color:theme.text, background:"transparent"}}
         />
-        {q && <svg onClick={()=>setQ("")} width="18" height="18" viewBox="0 0 24 24" fill="#9aa0a6" style={{cursor:"pointer"}}><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>}
-        <div style={{width:1, height:24, background:"#dfe1e5"}}/>
+        {q && <svg onClick={()=>setQ("")} width="18" height="18" viewBox="0 0 24 24" fill={theme.muted} style={{cursor:"pointer"}}><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>}
+        <div style={{width:1, height:24, background:theme.divider}}/>
         <svg onClick={()=>search("google")} width="24" height="24" viewBox="0 0 48 48" style={{cursor:"pointer", flexShrink:0}}>
           <path fill="#4285F4" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/>
           <path fill="#34A853" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/>
@@ -306,9 +324,9 @@ function SearchBar() {
       </div>
       <div style={{display:"flex", justifyContent:"center", gap:10, marginTop:16}}>
         {["Google 검색","Naver 검색"].map((label,i)=>(
-          <button key={i} onClick={()=>search(i===0?"google":"naver")} style={{padding:"9px 20px", borderRadius:4, border:"1px solid #f8f9fa", background:"#f8f9fa", color:"#3c4043", fontSize:14, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 1px 1px rgba(0,0,0,.1)"}}
-            onMouseEnter={e=>{e.target.style.border="1px solid #dadce0"; e.target.style.boxShadow="0 1px 3px rgba(0,0,0,.2)";}}
-            onMouseLeave={e=>{e.target.style.border="1px solid #f8f9fa"; e.target.style.boxShadow="0 1px 1px rgba(0,0,0,.1)";}}
+          <button key={i} onClick={()=>search(i===0?"google":"naver")} style={{padding:"9px 20px", borderRadius:10, border:`1px solid ${theme.surfaceAlt}`, background:theme.surfaceAlt, color:theme.text, fontSize:14, cursor:"pointer", fontFamily:"inherit", boxShadow:"0 1px 1px rgba(0,0,0,.1)"}}
+            onMouseEnter={e=>{e.target.style.border=`1px solid ${theme.border}`; e.target.style.boxShadow="0 1px 3px rgba(0,0,0,.2)";}}
+            onMouseLeave={e=>{e.target.style.border=`1px solid ${theme.surfaceAlt}`; e.target.style.boxShadow="0 1px 1px rgba(0,0,0,.1)";}}
           >{label}</button>
         ))}
       </div>
@@ -318,34 +336,123 @@ function SearchBar() {
 
 /* ── APP ── */
 export default function App() {
+  const [mode, setMode] = useState(() => localStorage.getItem("dashboard-mode") || "light");
+  const [accentColor, setAccentColor] = useState(() => localStorage.getItem("dashboard-accent-color") || "#4285F4");
+
+  const theme = useMemo(() => ({
+    mode,
+    accentColor,
+    pageBg: mode === "dark" ? "#202124" : "#f8f9fa",
+    surface: mode === "dark" ? "#303134" : "#ffffff",
+    surfaceAlt: mode === "dark" ? "#3c4043" : "#f8f9fa",
+    text: mode === "dark" ? "#e8eaed" : "#202124",
+    subText: mode === "dark" ? "#bdc1c6" : "#5f6368",
+    muted: "#9aa0a6",
+    border: mode === "dark" ? "#5f6368" : "#dadce0",
+    divider: mode === "dark" ? "#5f6368" : "#e8eaed",
+    danger: "#d93025",
+    success: "#34A853",
+    footerBg: mode === "dark" ? "#171717" : "#f2f2f2",
+  }), [mode, accentColor]);
+
+  useEffect(() => {
+    localStorage.setItem("dashboard-mode", mode);
+  }, [mode]);
+
+  useEffect(() => {
+    localStorage.setItem("dashboard-accent-color", accentColor);
+  }, [accentColor]);
+
+  useEffect(() => {
+    document.title = "My Google - 사용자 맞춤형 대시보드";
+  }, []);
+
+  const logoColors = ["#4285F4","#EA4335","#FBBC05","#4285F4","#34A853","#EA4335"];
+  const topControlStyle = {
+    minHeight: 34,
+    padding: "0 12px",
+    borderRadius: 999,
+    border: `1px solid ${theme.border}`,
+    background: theme.surfaceAlt,
+    color: theme.text,
+    fontSize: 12,
+    cursor: "pointer",
+    fontFamily: "inherit",
+    display: "inline-flex",
+    alignItems: "center",
+    gap: 6,
+  };
+
   return (
-    <div style={{minHeight:"100vh", background:"#f8f9fa", fontFamily:"'Google Sans',Roboto,Arial,sans-serif", display:"flex", flexDirection:"column"}}>
-      <div style={{display:"flex", justifyContent:"flex-end", alignItems:"center", padding:"14px 24px", gap:16, background:"#fff", borderBottom:"1px solid #e8eaed"}}>
-        <a href="https://mail.google.com" target="_blank" rel="noopener noreferrer" style={{fontSize:13, color:"#202124", textDecoration:"none"}}>Gmail</a>
-        <a href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{fontSize:13, color:"#202124", textDecoration:"none"}}>이미지</a>
-        <div style={{width:36, height:36, borderRadius:"50%", background:"#1a73e8", display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:14, fontWeight:500, cursor:"pointer"}}>나</div>
+    <div style={{minHeight:"100vh", background:theme.pageBg, color:theme.text, fontFamily:"'Google Sans',Roboto,Arial,sans-serif", display:"flex", flexDirection:"column"}}>
+      <style>{`
+        .dashboard-input::placeholder{color:${theme.muted};opacity:1}
+        .dashboard-card:hover{
+          transform:translateY(-2px);
+          box-shadow:${theme.mode === "dark" ? "0 8px 20px rgba(0,0,0,.35)" : "0 8px 20px rgba(32,33,36,.14)"} !important;
+        }
+        .top-link,.top-control{transition:background 0.18s ease,border-color 0.18s ease,opacity 0.18s ease}
+        .top-link:hover,.top-control:hover{background:${theme.surfaceAlt};opacity:.92}
+        @media (max-width:768px){
+          .dashboard-grid{grid-template-columns:1fr !important}
+          .dashboard-shell{padding:0 12px !important;margin:18px auto !important}
+          .dashboard-card{min-height:auto !important;padding:18px !important}
+          .dashboard-hero{padding-top:26px !important;padding-bottom:24px !important}
+          .dashboard-logo{font-size:46px !important}
+          .topbar{padding:12px !important;gap:8px !important;flex-wrap:wrap}
+        }
+      `}</style>
+      <div className="topbar" style={{display:"flex", justifyContent:"flex-end", alignItems:"center", padding:"14px 24px", gap:12, background:theme.surface, borderBottom:`1px solid ${theme.divider}`}}>
+        <a className="top-link" href="https://mail.google.com" target="_blank" rel="noopener noreferrer" style={{fontSize:13, color:theme.text, textDecoration:"none", padding:"7px 9px", borderRadius:999}}>Gmail</a>
+        <a className="top-link" href="https://www.google.com/imghp" target="_blank" rel="noopener noreferrer" style={{fontSize:13, color:theme.text, textDecoration:"none", padding:"7px 9px", borderRadius:999}}>이미지</a>
+        <button
+          className="top-control"
+          onClick={() => setMode(prev => prev === "light" ? "dark" : "light")}
+          aria-label="다크모드와 라이트모드 전환"
+          title="다크모드와 라이트모드 전환"
+          style={{...topControlStyle, borderColor:`${theme.accentColor}66`}}
+        >
+          {mode === "light" ? "🌙 다크" : "☀️ 라이트"}
+        </button>
+        <label
+          className="top-control"
+          title="나만의 색상 선택"
+          style={{...topControlStyle, borderColor:`${theme.accentColor}66`}}
+        >
+          <input
+            type="color"
+            value={accentColor}
+            onChange={(e) => setAccentColor(e.target.value)}
+            aria-label="나만의 색상 선택"
+            style={{width:18, height:18, padding:0, border:"none", borderRadius:4, background:"transparent", cursor:"pointer"}}
+          />
+          색상
+        </label>
+        <div style={{width:36, height:36, borderRadius:"50%", background:theme.accentColor, display:"flex", alignItems:"center", justifyContent:"center", color:"#fff", fontSize:14, fontWeight:500, cursor:"pointer"}}>나</div>
       </div>
 
-      <div style={{background:"#fff", paddingTop:36, paddingBottom:32, display:"flex", flexDirection:"column", alignItems:"center", borderBottom:"1px solid #e8eaed"}}>
-        <div style={{fontSize:64, fontWeight:300, letterSpacing:-2, marginBottom:20, lineHeight:1}}>
-          {"Google".split("").map((ch,i)=>{
-            const c=["#4285F4","#EA4335","#FBBC05","#4285F4","#34A853","#EA4335"][i];
-            return <span key={i} style={{color:c}}>{ch}</span>;
+      <div className="dashboard-hero" style={{background:theme.surface, paddingTop:32, paddingBottom:26, display:"flex", flexDirection:"column", alignItems:"center", borderBottom:`1px solid ${theme.divider}`}}>
+        <div className="dashboard-logo" style={{fontSize:62, fontWeight:300, letterSpacing:0, marginBottom:8, lineHeight:1}}>
+          {"My Google".split("").map((ch,i)=>{
+            const c = ch === " " ? "transparent" : logoColors[i % logoColors.length];
+            return <span key={i} style={{color:c}}>{ch === " " ? "\u00a0" : ch}</span>;
           })}
         </div>
-        <SearchBar />
+        <div style={{fontSize:15, color:theme.text, fontWeight:600, marginBottom:4}}>나만의 검색 대시보드</div>
+        <div style={{fontSize:13, color:theme.subText, marginBottom:18}}>시간, 날씨, 할 일, 뉴스를 한 화면에서 확인하세요.</div>
+        <SearchBar theme={theme} />
       </div>
 
-      <div style={{flex:1, maxWidth:900, width:"100%", margin:"28px auto", padding:"0 20px", boxSizing:"border-box"}}>
-        <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:16}}>
-          <ClockCard />
-          <TodoCard />
-          <WeatherCard />
-          <NewsCard />
+      <div className="dashboard-shell" style={{flex:1, width:"100%", maxWidth:1200, margin:"24px auto", padding:"0 24px", boxSizing:"border-box"}}>
+        <div className="dashboard-grid" style={{display:"grid", gridTemplateColumns:"repeat(2, minmax(320px, 1fr))", gap:20, justifyContent:"center", alignItems:"stretch"}}>
+          <ClockCard theme={theme} />
+          <TodoCard theme={theme} />
+          <WeatherCard theme={theme} />
+          <NewsCard theme={theme} />
         </div>
       </div>
 
-      <div style={{borderTop:"1px solid #e8eaed", background:"#f2f2f2", padding:"14px 24px", display:"flex", justifyContent:"space-between", fontSize:13, color:"#70757a"}}>
+      <div style={{borderTop:`1px solid ${theme.divider}`, background:theme.footerBg, padding:"16px 24px", display:"flex", justifyContent:"space-between", alignItems:"center", gap:16, fontSize:13, color:theme.subText}}>
         <span>대한민국</span>
         <div style={{display:"flex", gap:20}}>
           <span style={{cursor:"pointer"}}>개인정보처리방침</span>
