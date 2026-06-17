@@ -1,4 +1,4 @@
-# 🧩 My Google
+<img width="10608" height="10465" alt="image" src="https://github.com/user-attachments/assets/098af3ae-b301-4221-84de-8f374a7c7899" /># 🧩 My Google
 
 > **사용자 맞춤형 Google 스타일 대시보드**
 > 검색, 시간, 날씨, 할 일, 뉴스, 테마 설정을 한 화면에서 사용할 수 있는 개인화 웹 대시보드입니다.
@@ -6,7 +6,9 @@
 <br />
 
 ## 📸 실행 화면
-![Uploading image.png…]()
+<img width="10608" height="10465" alt="스크린샷_17-6-2026_172811_127 0 0 1" src="https://github.com/user-attachments/assets/c7f624ec-61e0-4dbe-83d5-a689f8bd36ce" />
+
+
 
 <br />
 
